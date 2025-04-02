@@ -1,0 +1,101 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import heapq
+from datetime import datetime, timedelta
+
+# Weight constants for the priority formula
+WEIGHTS = {
+    "urgency": 3,
+    "importance": 4,
+    "deadline": 5,
+    "flexibility": 2,
+    "duration": 1
+}
+
+WORK_START = 9
+WORK_END = 17
+
+class Task:
+    def __init__(self, title, duration, urgency, importance, deadline, flexibility):
+        self.title = title
+        self.duration = int(duration)
+        self.urgency = int(urgency)
+        self.importance = int(importance)
+        self.deadline = datetime.strptime(deadline, "%Y-%m-%d")
+        self.flexibility = int(flexibility)  # 0 = fixed, 1 = fully flexible
+        self.timestamp = datetime.now()
+        self.priority = -self.calculate_priority()  # Max heap
+
+    def calculate_priority(self):
+        days_until_deadline = max((self.deadline - datetime.now()).days, 1)
+        score = (
+            WEIGHTS["urgency"] * self.urgency +
+            WEIGHTS["importance"] * self.importance +
+            WEIGHTS["deadline"] * (1 / days_until_deadline) +
+            WEIGHTS["flexibility"] * (1 - self.flexibility) +
+            WEIGHTS["duration"] * (1 / max(self.duration, 1))
+        )
+        return score
+
+    def __lt__(self, other):
+        return (self.priority, self.timestamp) < (other.priority, other.timestamp)
+
+class FlowTaskApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("FlowTask AI Scheduler")
+
+        self.tasks = []
+        self.create_widgets()
+
+    def create_widgets(self):
+        labels = ["Title", "Duration (min)", "Urgency (1-5)", "Importance (1-5)", "Deadline (YYYY-MM-DD)", "Flexibility (0=fixed, 1=flexible)"]
+        self.entries = []
+
+        for i, label in enumerate(labels):
+            ttk.Label(self.root, text=label).grid(row=i, column=0, padx=5, pady=2, sticky="w")
+            entry = ttk.Entry(self.root)
+            entry.grid(row=i, column=1, padx=5, pady=2)
+            self.entries.append(entry)
+
+        ttk.Button(self.root, text="Add Task", command=self.add_task).grid(row=6, column=0, columnspan=2, pady=10)
+        ttk.Button(self.root, text="Generate Schedule", command=self.generate_schedule).grid(row=7, column=0, columnspan=2)
+
+        self.output = tk.Text(self.root, height=20, width=60)
+        self.output.grid(row=8, column=0, columnspan=2, padx=10, pady=10)
+
+    def add_task(self):
+        try:
+            title, duration, urgency, importance, deadline, flexibility = [e.get() for e in self.entries]
+            task = Task(title, duration, urgency, importance, deadline, flexibility)
+            heapq.heappush(self.tasks, task)
+            messagebox.showinfo("Added", f"Task '{title}' added with calculated priority.")
+            for entry in self.entries:
+                entry.delete(0, tk.END)
+        except Exception as e:
+            messagebox.showerror("Error", f"Invalid input: {e}")
+
+    def generate_schedule(self):
+        self.output.delete("1.0", tk.END)
+        current_time = datetime.now().replace(hour=WORK_START, minute=0, second=0, microsecond=0)
+        end_time = current_time.replace(hour=WORK_END)
+
+        schedule = []
+
+        while self.tasks and current_time < end_time:
+            task = heapq.heappop(self.tasks)
+            task_end = current_time + timedelta(minutes=task.duration)
+
+            if task_end <= end_time:
+                schedule.append(f"{current_time.strftime('%H:%M')} - {task_end.strftime('%H:%M')}: {task.title}")
+                current_time = task_end + timedelta(minutes=5)
+            else:
+                schedule.append(f"Could not fit: {task.title} today.")
+
+        self.output.insert(tk.END, "\n".join(schedule))
+
+# Launch app
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = FlowTaskApp(root)
+    root.mainloop()
